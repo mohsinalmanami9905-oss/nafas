@@ -43,21 +43,33 @@ const P = {
 const ic = (n, sw = 1.9) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${P[n]}</svg>`;
 
 /* ---------------- salman media (video clip when available, else the still) ---------------- */
-const CLIPS = { idle: 'assets/clips/idle.mp4', wave: 'assets/clips/wave.mp4', breathe: 'assets/clips/breathe.mp4', talk: 'assets/clips/talk.mp4', proud: 'assets/clips/proud.mp4' };
+const CLIPS = { idle: 'assets/clips/idle.mp4', wave: 'assets/clips/talk.mp4', breathe: 'assets/clips/idle.mp4', talk: 'assets/clips/talk.mp4', proud: 'assets/clips/proud.mp4' };
 const clipOK = {};
+document.addEventListener('visibilitychange', () => { if (document.hidden && voiceEl) voiceEl.pause(); });
 async function probe() { await Promise.all(Object.entries(CLIPS).map(async ([k, u]) => { try { const r = await fetch(u, { method: 'HEAD' }); clipOK[k] = r.ok; } catch { clipOK[k] = false; } })); }
 const probing = probe();
 function salman(kind = 'idle', cls = '') {
-  if (clipOK[kind]) return `<video class="${cls}" src="${CLIPS[kind]}" poster="assets/salman.jpg" autoplay muted playsinline ${kind === 'idle' ? 'loop' : ''}></video>`;
-  return `<img class="${cls}" src="assets/salman.jpg" alt="سلمان">`;
+  // two stacked loops: the chosen motion + a talking loop; say() cross-fades to "talk" while the voice plays
+  const base = clipOK[kind] ? `<video class="sv base ${cls}" src="${CLIPS[kind]}" poster="assets/salman_poster.jpg" autoplay muted playsinline loop></video>` : `<img class="sv base ${cls}" src="assets/salman.jpg" alt="سلمان">`;
+  const talk = clipOK.talk ? `<video class="sv talk" src="${CLIPS.talk}" muted playsinline loop preload="auto"></video>` : '';
+  return `<div class="sal">${base}${talk}</div>`;
 }
-/* voice lines recorded for Salman; silently skipped if a file is missing */
+/* Salman's recorded voice; while it plays he switches to the talking motion, then eases back */
+const GENDERED = new Set(['hello_morning', 'hello_evening', 'dose_done', 'follow', 'in', 'out', 'breathe_done', 'stamp', 'emergency']);
 let voiceEl;
+function setTalking(on) {
+  $$('.sal').forEach(w => { const v = w.querySelector('.talk'); if (!v) return; if (on) { v.currentTime = 0; v.play().catch(() => {}); } w.classList.toggle('talking', on); if (!on) setTimeout(() => v.pause(), 400); });
+}
 function say(id) {
   if (!S().prefs.voice) return;
-  try { voiceEl && voiceEl.pause(); voiceEl = new Audio(`assets/voice/${id}.mp3`); voiceEl.play().catch(() => {}); } catch {}
+  try {
+    voiceEl && (voiceEl.onended = null, voiceEl.pause());
+    if (GENDERED.has(id)) id += S().child.gender === 'f' ? '_f' : '_m';
+    voiceEl = new Audio(`assets/voice/${id}.mp3`);
+    voiceEl.onplay = () => setTalking(true); voiceEl.onended = voiceEl.onpause = () => setTalking(false);
+    voiceEl.play().catch(() => setTalking(false));
+  } catch {}
 }
-
 /* ---------------- feedback ---------------- */
 let toastT;
 function toast(msg, undo) {
@@ -164,13 +176,15 @@ function setup(step) {
   if (step === 1) return mount(`<div class="screen plain">${topbar('الخطوة 1 من 4', { back: true, sos: false })}${bar(1)}
     <h1 class="big">عرّفنا على طفلك</h1><p class="sub">عشان نسمّي الأشياء باسمه.</p>
     <div class="field"><label>اسم الطفل</label><input id="nm" value="${esc(s.child.name)}" placeholder="مثلاً: سلمان" autocomplete="off"></div>
+    <div class="field"><label>ولد أو بنت؟</label><div class="chips" id="gd">${[['m', 'ولد'], ['f', 'بنت']].map(([k, l]) => `<button class="chip ${s.child.gender === k ? 'on' : ''}" data-g="${k}">${l}</button>`).join('')}</div><div class="hint">عشان سلمان يكلّم طفلك صح.</div></div>
     <div class="field"><label>العمر</label><div class="chips" id="age">${['أقل من سنتين', '2–5 سنوات', '6–11 سنة', '12 وفوق'].map(a => `<button class="chip ${s.child.age === a ? 'on' : ''}">${a}</button>`).join('')}</div></div>
     <div class="field"><label>حساسية دوائية معروفة (اختياري)</label><input id="al" value="${esc(s.child.allergy)}" placeholder="اتركه فاضي إذا ما في"></div>
     <div class="field"><label>شنو صلتك بالطفل؟</label><div class="chips" id="me">${['الأم', 'الأب', 'الجد أو الجدة', 'غيره'].map(a => `<button class="chip ${s.me === a ? 'on' : ''}">${a}</button>`).join('')}</div></div>
     <button class="btn" id="n" style="margin-top:10px">التالي</button></div>`, () => {
     const pick = (id, key, set) => $$(`#${id} .chip`).forEach(b => b.onclick = () => { $$(`#${id} .chip`).forEach(x => x.classList.toggle('on', x === b)); set(b.textContent); });
     pick('age', 'age', v => s.child.age = v); pick('me', 'me', v => s.me = v);
-    $('#n').onclick = () => { s.child.name = $('#nm').value.trim(); s.child.allergy = $('#al').value.trim(); if (!s.child.name) { $('#nm').focus(); return toast('اكتب اسم الطفل'); } St.save(); go('/setup?s=' + (s.plan ? 3 : 2)); };
+    $$('#gd .chip').forEach(b => b.onclick = () => { $$('#gd .chip').forEach(x => x.classList.toggle('on', x === b)); s.child.gender = b.dataset.g; });
+    $('#n').onclick = () => { s.child.name = $('#nm').value.trim(); s.child.allergy = $('#al').value.trim(); if (!s.child.name) { $('#nm').focus(); return toast('اكتب اسم الطفل'); } if (!s.child.gender) return toast('اختار ولد أو بنت'); St.save(); go('/setup?s=' + (s.plan ? 3 : 2)); };
   });
   if (step === 2) return mount(`<div class="screen plain">${topbar('الخطوة 2 من 4', { back: true, sos: false })}${bar(2)}
     <h1 class="big">خطة الربو من الطبيب</h1><p class="sub">الخطة هي اللي يكتبها الطبيب: متى الوضع طبيعي، ومتى تحتاجون الفنتولين، ومتى طوارئ.</p>
@@ -256,6 +270,7 @@ async function homeScreen() {
     ${!s.plan ? `<div class="label">ناقص</div><button class="card row" style="width:100%;text-align:start" data-go="edit?what=plan"><div class="grow"><b>أضف خطة الطبيب</b><div class="muted small">عشان تكون جاهزة في الطوارئ</div></div><span class="chev">${ic('chev')}</span></button>` : ''}
   </div>${tabbar('home')}`, () => {
     $('#qr').onclick = rescueSheet; $('#qs').onclick = symptomSheet;
+    if (!window.__greeted) { window.__greeted = true; say(slot && slot.due ? 'dose_time' : h < 12 ? 'hello_morning' : 'hello_evening'); }
     $('#give') && ($('#give').onclick = () => confirmDose(slot, 'given'));
     $('#skip') && ($('#skip').onclick = () => sheet(`<h2>ما انعطت الجرعة؟</h2><p class="muted">نسجّلها «ما انعطت» مثل ما هي. ما في أي تقييم.</p><div class="btns"><button class="btn ghost" id="no">رجوع</button><button class="btn" id="yes">سجّل «ما انعطت»</button></div>`, (el, close) => { $('#no', el).onclick = close; $('#yes', el).onclick = () => { close(); confirmDose(slot, 'missed'); }; }));
     $('#early') && ($('#early').onclick = () => confirmDose({ at: slot.at }, 'given'));
@@ -272,7 +287,7 @@ function confirmDose(slot, status) {
   if (status === 'given') p.used += puffs;
   const e = St.addEvent({ type: 'dose', med: 'pre', slot: slot.at, status, puffs });
   homeScreen(); if (status === 'given') say('dose_done');
-  toast(status === 'given' ? `انسجلت الجرعة ${St.fmtTime(e.at)}` : 'انسجلت «ما انعطت»', () => { St.removeEvent(e.id); homeScreen(); });
+  toast(status === 'given' ? `سجّلنا الجرعة ${St.fmtTime(e.at)}` : 'سجّلنا إن الجرعة ما انعطت', () => { St.removeEvent(e.id); homeScreen(); });
 }
 
 /* ================= QUICK SHEETS ================= */
@@ -302,7 +317,7 @@ function symptomSheet() {
     const one = (id, set) => $$(`#${id} .chip`, el).forEach(b => b.onclick = () => { $$(`#${id} .chip`, el).forEach(x => x.classList.toggle('on', x === b)); set(b.textContent); });
     one('k', v => kind = v); one('s', v => sev = v);
     $$('#t .chip', el).forEach(b => b.onclick = () => { b.classList.toggle('on'); b.classList.contains('on') ? tags.add(b.textContent) : tags.delete(b.textContent); });
-    $('#ok', el).onclick = () => { const e = St.addEvent({ type: 'symptom', kind, severity: sev, tags: [...tags], note: $('#note', el).value.trim() }); close(); route(); toast(`انسجل: ${kind}`, () => { St.removeEvent(e.id); route(); }); };
+    $('#ok', el).onclick = () => { const e = St.addEvent({ type: 'symptom', kind, severity: sev, tags: [...tags], note: $('#note', el).value.trim() }); close(); route(); toast(`سجّلنا: ${kind}`, () => { St.removeEvent(e.id); route(); }); };
   });
 }
 
@@ -431,16 +446,17 @@ async function salmanScreen() {
     const cue = $('#cue'), img = $('#coach .breath-img');
     const stop = (msg) => { on = false; clearInterval(coachTimer); img.classList.remove('in'); $('#go').innerHTML = ic('play') + 'ابدأ 10 أنفاس'; cue.textContent = msg; };
     $('#go').onclick = () => {
-      if (on) return stop('وقفنا. نكمل بعدين؟');
-      on = true; n = 0; $('#go').innerHTML = ic('pause') + 'وقف'; say('breathe_start');
-      let phase = 'out';
+      if (on) { say('stop'); return stop('وقفنا. نكمل بعدين؟'); }
+      on = true; n = 0; $('#go').innerHTML = ic('pause') + 'وقف'; say('breathe_start'); setTimeout(() => on && say('follow'), 2000);
+      let phase = 'out'; cue.textContent = 'استعد…';
       const tick = () => {
         phase = phase === 'in' ? 'out' : 'in';
-        if (phase === 'in') { n++; if (n > 10) { stop('أحسنت! خلصنا ⭐'); say('breathe_done'); return; } }
+        if (phase === 'in') { n++; if (n > 10) { stop(S().child.gender === 'f' ? 'شاطرة! خلصنا' : 'شاطر! خلصنا'); say('breathe_done'); return; } }
         cue.textContent = phase === 'in' ? `شهيق… ${n}` : `زفير… ${n}`; img.classList.toggle('in', phase === 'in');
+        if (n === 1) say(phase); else if (phase === 'in') say('n' + n);
         if (img.tagName === 'VIDEO' && phase === 'in') { img.currentTime = 0; img.play().catch(() => {}); }
       };
-      tick(); coachTimer = setInterval(tick, 4000);
+      setTimeout(() => { if (!on) return; tick(); coachTimer = setInterval(tick, 4000); }, 3600);
     };
     $('#voice').onclick = () => { s.prefs.voice = !s.prefs.voice; St.save(); salmanScreen(); };
     const m = await import('./inhaler3d.js'); const I = m.createInhaler($('#inh3d'));

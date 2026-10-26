@@ -56,7 +56,7 @@ export const fmtTime = ts => new Date(ts).toLocaleTimeString('ar-BH', { hour: 'n
 export function fmtDay(ts) {
   const a = new Date(new Date(ts).toDateString()), b = new Date(new Date().toDateString());
   const d = Math.round((b - a) / D);
-  if (d === 0) return 'اليوم'; if (d === 1) return 'أمس'; if (d === -1) return 'باچر';
+  if (d === 0) return 'اليوم'; if (d === 1) return 'أمس'; if (d === -1) return 'باجر';
   return new Date(ts).toLocaleDateString('ar-BH', { weekday: 'long', day: 'numeric', month: 'long', numberingSystem: 'latn' });
 }
 export function ago(ts) {
