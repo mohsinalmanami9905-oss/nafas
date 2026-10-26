@@ -200,3 +200,8 @@ body.night .welcome .hero .pic{background:#fff;border-radius:30px;overflow:hidde
 .welcome .sal .sv{object-fit:contain;object-position:50% 50%}
 .sal .talk{opacity:0}
 .sal.talking .talk{opacity:1}
+
+.spin{position:relative;background:#fff;border-radius:var(--r-lg);box-shadow:var(--sh);aspect-ratio:300/545;max-height:440px;margin:0 auto;touch-action:pan-y;cursor:grab;overflow:hidden}
+.spin-img{position:absolute;inset:0;background:url(../assets/salman360.jpg) 0 0/800% 600% no-repeat}
+.spin-hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:6px;align-items:center;background:rgba(16,35,58,.78);color:#fff;font-size:.8em;font-weight:600;padding:6px 12px;border-radius:999px;transition:opacity .3s}
+.spin-hint svg{width:14px;height:14px}.spin-hint svg:last-child{transform:scaleX(-1)}

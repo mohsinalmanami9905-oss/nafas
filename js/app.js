@@ -88,7 +88,7 @@ function sheet(html, onMount) {
   onMount && onMount(sc.querySelector('.sheet'), close);
   return close;
 }
-function applyPrefs() { document.body.classList.toggle('night', S().prefs.night); document.body.classList.toggle('big', S().prefs.big); }
+function applyPrefs() { document.body.classList.toggle('night', !!S().prefs.night); document.body.classList.toggle('big', !!S().prefs.big); }
 applyPrefs();
 
 /* ---------------- router ---------------- */
@@ -435,6 +435,8 @@ async function salmanScreen() {
     <div class="coach" id="coach">${salman('breathe', 'breath-img')}<div class="ring"><div id="cue">نتنفس سوا؟</div></div></div>
     <div class="btns" style="margin-top:12px"><button class="btn ok" id="go">${ic('play')}ابدأ 10 أنفاس</button><button class="btn ghost" id="voice" style="flex:.5">${ic('speaker')}${s.prefs.voice ? 'الصوت شغال' : 'الصوت مطفي'}</button></div>
     <p class="muted small" style="margin:8px 4px 0">استخدمه وقت القمع: الطفل يقلّد سلمان. سلمان يعدّ بس، وما يقيس التنفس.</p>
+    <div class="label">سلمان 360° — حرّكه بإصبعك</div>
+    <div class="spin" id="spin" aria-label="سلمان ثلاثي الأبعاد، اسحب لتدويره"><div class="spin-img"></div><div class="spin-hint">${ic('back')}<span>اسحب</span>${ic('back')}</div></div>
     <div class="label">طريقة البخاخ مع القمع</div>
     <div class="viewer"><canvas id="inh3d" aria-label="البخاخ والقمع ثلاثي الأبعاد"></canvas></div>
     <div class="list" style="margin-top:12px">${[['جهّز', 'شيل غطاء البخاخ وتأكد إن القمع نظيف وناشف.'], ['رجّ البخاخ', 'رجّه زين كم ثانية قبل كل بخة.'], ['ركّبه', 'دخّل البخاخ في طرف القمع، والقناع في الطرف الثاني.'], ['بخة وحدة وتنفس', 'حط القناع على الوجه بإحكام، اضغط بخة وحدة، وخلّ الطفل يتنفس مع سلمان حسب تعليمات الطبيب.']].map((x, i) => `<button class="lstep" data-s="${i}"><span class="n">${i + 1}</span><span class="grow"><b>${x[0]}</b><div class="muted small">${x[1]}</div></span></button>`).join('')}</div>
@@ -459,10 +461,22 @@ async function salmanScreen() {
       setTimeout(() => { if (!on) return; tick(); coachTimer = setInterval(tick, 4000); }, 3600);
     };
     $('#voice').onclick = () => { s.prefs.voice = !s.prefs.voice; St.save(); salmanScreen(); };
+    spin360($('#spin'));
     const m = await import('./inhaler3d.js'); const I = m.createInhaler($('#inh3d'));
     window.addEventListener('hashchange', () => { I.dispose(); clearInterval(coachTimer); }, { once: true });
     $$('.lstep[data-s]').forEach(b => b.onclick = () => { $$('.lstep').forEach(x => x.classList.toggle('on', x === b)); I.step(+b.dataset.s); });
   });
+}
+
+function spin360(el) {
+  const N = 48, COLS = 8, img = el.querySelector('.spin-img'); let f = 0, auto = true, x0 = null, f0 = 0, raf;
+  const draw = () => { const k = ((Math.round(f) % N) + N) % N; img.style.backgroundPosition = `${(k % COLS) / (COLS - 1) * 100}% ${Math.floor(k / COLS) / 5 * 100}%`; };
+  const loop = () => { if (!document.body.contains(el)) return cancelAnimationFrame(raf); if (auto) { f += .22; draw(); } raf = requestAnimationFrame(loop); };
+  el.addEventListener('pointerdown', e => { auto = false; x0 = e.clientX; f0 = f; el.setPointerCapture(e.pointerId); el.querySelector('.spin-hint').style.opacity = 0; });
+  el.addEventListener('pointermove', e => { if (x0 === null) return; f = f0 + (x0 - e.clientX) / 7; draw(); });
+  const up = () => { x0 = null; clearTimeout(el._t); el._t = setTimeout(() => auto = true, 2500); };
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  draw(); loop();
 }
 
 /* ================= SETTINGS / FAMILY / REPORT ================= */
