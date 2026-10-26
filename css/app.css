@@ -176,8 +176,6 @@ body.night .welcome .hero .pic{background:#fff;border-radius:30px;overflow:hidde
 .coach img,.coach video{width:100%;height:100%;object-fit:cover;object-position:50% 12%}
 .coach .ring{position:absolute;inset:auto 0 18px;display:flex;justify-content:center}
 .coach .ring div{background:rgba(16,35,58,.86);color:#fff;font-weight:700;font-size:1.15em;padding:10px 22px;border-radius:999px;min-width:170px;text-align:center;backdrop-filter:blur(8px)}
-.breath-img{transition:transform 4s ease-in-out}
-.breath-img.in{transform:scale(1.035) translateY(-4px)}
 .lstep{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;width:100%;text-align:start}
 .lstep+.lstep{border-top:1px solid var(--line)}
 .lstep .n{width:30px;height:30px;border-radius:50%;background:var(--brandsoft);color:var(--brand);display:grid;place-items:center;font-weight:700;flex:none}
@@ -198,10 +196,16 @@ body.night .welcome .hero .pic{background:#fff;border-radius:30px;overflow:hidde
 .sal{position:relative;width:100%;height:100%}
 .sal .sv{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 8%;transition:opacity .35s ease}
 .welcome .sal .sv{object-fit:contain;object-position:50% 50%}
-.sal .talk{opacity:0}
-.sal.talking .talk{opacity:1}
 
-.spin{position:relative;background:#fff;border-radius:var(--r-lg);box-shadow:var(--sh);aspect-ratio:300/545;max-height:440px;margin:0 auto;touch-action:pan-y;cursor:grab;overflow:hidden}
-.spin-img{position:absolute;inset:0;background:url(../assets/salman360.jpg) 0 0/800% 600% no-repeat}
-.spin-hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:6px;align-items:center;background:rgba(16,35,58,.78);color:#fff;font-size:.8em;font-weight:600;padding:6px 12px;border-radius:999px;transition:opacity .3s}
-.spin-hint svg{width:14px;height:14px}.spin-hint svg:last-child{transform:scaleX(-1)}
+
+/* Salman 3D */
+.sal .s3d-canvas{position:absolute;inset:0;width:100%!important;height:100%!important;display:block;opacity:0;transition:opacity .5s ease;touch-action:pan-y;cursor:grab}
+.sal.s3d-ready .s3d-canvas{opacity:1}
+.sal.s3d-ready .still{opacity:0}
+.sal .still{transition:opacity .5s ease}
+.welcome .hero .pic .sal.s3d-ready{mix-blend-mode:normal}
+.sal.s3d-ready::after{content:"";position:absolute;inset:auto 0 0;height:0}
+.coach .sal .s3d-canvas{background:radial-gradient(120% 90% at 50% 30%,#fff 0,#eef3f8 100%)}
+.hello .av .sal .s3d-canvas{border-radius:22px;background:radial-gradient(100% 100% at 50% 35%,#fff,#e9f0f7)}
+.s3d-hint{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(16,35,58,.72);color:#fff;font-size:.75em;font-weight:600;padding:5px 11px;border-radius:999px;pointer-events:none;transition:opacity .4s;white-space:nowrap}
+.sal.touched .s3d-hint{opacity:0}

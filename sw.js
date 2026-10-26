@@ -1,5 +1,5 @@
-const C='nafas-v6';
-const A=['./','index.html','css/app.css','js/app.js','js/store.js','js/inhaler3d.js','vendor/three.module.min.js','vendor/OrbitControls.js','assets/logo.svg','assets/salman.jpg','assets/salman_face.jpg','assets/salman360.jpg','assets/salman_poster.jpg','fonts/IBMPlexSansArabic-Regular.ttf','fonts/IBMPlexSansArabic-SemiBold.ttf','fonts/IBMPlexSansArabic-Bold.ttf'];
+const C='nafas-v7';
+const A=['./','index.html','css/app.css','js/app.js','js/store.js','js/inhaler3d.js','vendor/three.module.min.js','vendor/OrbitControls.js','assets/logo.svg','assets/salman.jpg','assets/salman_face.jpg','js/salman3d.js','vendor/GLTFLoader.js','vendor/BufferGeometryUtils.js','vendor/meshopt_decoder.js','vendor/DecalGeometry.js','models/salman.glb','assets/voice/env.json','fonts/IBMPlexSansArabic-Regular.ttf','fonts/IBMPlexSansArabic-SemiBold.ttf','fonts/IBMPlexSansArabic-Bold.ttf'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(A)));self.skipWaiting()});
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==C).map(x=>caches.delete(x)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(fetch(e.request).then(r=>{if(r.ok){const cp=r.clone();caches.open(C).then(c=>c.put(e.request,cp))}return r}).catch(()=>caches.match(e.request,{ignoreSearch:true})))});

@@ -42,30 +42,26 @@ const P = {
 };
 const ic = (n, sw = 1.9) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${P[n]}</svg>`;
 
-/* ---------------- salman media (video clip when available, else the still) ---------------- */
-const CLIPS = { idle: 'assets/clips/idle.mp4', wave: 'assets/clips/talk.mp4', breathe: 'assets/clips/idle.mp4', talk: 'assets/clips/talk.mp4', proud: 'assets/clips/proud.mp4' };
-const clipOK = {};
+/* ---------------- Salman: one real-time 3D character (js/salman3d.js) shared across screens ---------------- */
+const S3 = import('./salman3d.js').catch(() => null);
+const probing = Promise.resolve();
 document.addEventListener('visibilitychange', () => { if (document.hidden && voiceEl) voiceEl.pause(); });
-async function probe() { await Promise.all(Object.entries(CLIPS).map(async ([k, u]) => { try { const r = await fetch(u, { method: 'HEAD' }); clipOK[k] = r.ok; } catch { clipOK[k] = false; } })); }
-const probing = probe();
-function salman(kind = 'idle', cls = '') {
-  // two stacked loops: the chosen motion + a talking loop; say() cross-fades to "talk" while the voice plays
-  const base = clipOK[kind] ? `<video class="sv base ${cls}" src="${CLIPS[kind]}" poster="assets/salman_poster.jpg" autoplay muted playsinline loop></video>` : `<img class="sv base ${cls}" src="assets/salman.jpg" alt="سلمان">`;
-  const talk = clipOK.talk ? `<video class="sv talk" src="${CLIPS.talk}" muted playsinline loop preload="auto"></video>` : '';
-  return `<div class="sal">${base}${talk}</div>`;
+function salman(kind = 'idle', frame = 'full') {
+  // the still is the instant fallback; the 3D view takes over the largest visible host once loaded
+  return `<div class="sal" data-s3d data-kind="${kind}" data-frame="${frame}"><img class="sv still" src="assets/salman.jpg" alt="سلمان"></div>`;
 }
+const s3 = (fn) => S3.then(m => m && fn(m)).catch(() => {});
 /* Salman's recorded voice; while it plays he switches to the talking motion, then eases back */
 const GENDERED = new Set(['hello_morning', 'hello_evening', 'dose_done', 'follow', 'in', 'out', 'breathe_done', 'stamp', 'emergency']);
 let voiceEl;
-function setTalking(on) {
-  $$('.sal').forEach(w => { const v = w.querySelector('.talk'); if (!v) return; if (on) { v.currentTime = 0; v.play().catch(() => {}); } w.classList.toggle('talking', on); if (!on) setTimeout(() => v.pause(), 400); });
-}
+function setTalking(on) { $$('.sal').forEach(w => w.classList.toggle('talking', on)); }
 function say(id) {
   if (!S().prefs.voice) return;
   try {
     voiceEl && (voiceEl.onended = null, voiceEl.pause());
     if (GENDERED.has(id)) id += S().child.gender === 'f' ? '_f' : '_m';
     voiceEl = new Audio(`assets/voice/${id}.mp3`);
+    const el = voiceEl, vid = id; s3(m => m.speak(el, vid));
     voiceEl.onplay = () => setTalking(true); voiceEl.onended = voiceEl.onpause = () => setTalking(false);
     voiceEl.play().catch(() => setTalking(false));
   } catch {}
@@ -131,6 +127,7 @@ function mount(html, after) {
   $$('[data-back]', app).forEach(b => b.onclick = () => history.length > 1 ? history.back() : go('/home'));
   $$('[data-sos]', app).forEach(b => b.onclick = emergency);
   after && after();
+  if (app.querySelector('[data-s3d]')) s3(m => m.init());
 }
 
 /* ================= WELCOME ================= */
@@ -144,7 +141,7 @@ async function welcome(p) {
   const s = SLIDES[p] || SLIDES[0];
   mount(`<div class="welcome">
     <div class="brand"><img src="assets/logo.svg" alt="">نَفَس</div>
-    <div class="hero"><div class="pic">${salman(s.kind)}</div><h1>${s.t}</h1><p>${s.p}</p></div>
+    <div class="hero"><div class="pic">${salman(s.kind, 'full')}</div><h1>${s.t}</h1><p>${s.p}</p></div>
     <div class="dots">${SLIDES.map((_, i) => `<i class="${i === p ? 'on' : ''}"></i>`).join('')}</div>
     <button class="btn" id="next">${p < SLIDES.length - 1 ? 'التالي' : 'يلا نبدأ'}</button>
     ${p < SLIDES.length - 1 ? '<button class="btn ghost" id="skip" style="margin-top:10px;box-shadow:none;background:none">تخطّي</button>' : ''}
@@ -152,9 +149,9 @@ async function welcome(p) {
     $('#next').onclick = () => { if (p < SLIDES.length - 1) go('/?p=' + (p + 1)); else go('/role'); };
     $('#skip') && ($('#skip').onclick = () => go('/role'));
     let x0; const el = $('.welcome');
-    el.addEventListener('touchstart', e => x0 = e.touches[0].clientX, { passive: true });
-    el.addEventListener('touchend', e => { const dx = e.changedTouches[0].clientX - x0; if (dx < -50 && p > 0) go('/?p=' + (p - 1)); if (dx > 50 && p < SLIDES.length - 1) go('/?p=' + (p + 1)); });
-    say(s.v);
+    el.addEventListener('touchstart', e => x0 = e.target.closest('.s3d-canvas') ? null : e.touches[0].clientX, { passive: true });
+    el.addEventListener('touchend', e => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; if (dx < -50 && p > 0) go('/?p=' + (p - 1)); if (dx > 50 && p < SLIDES.length - 1) go('/?p=' + (p + 1)); });
+    say(s.v); if (s.kind === 'proud') s3(m => m.proud());
   });
 }
 function roleScreen() {
@@ -254,7 +251,7 @@ async function homeScreen() {
   const line = slot && slot.due ? (slot.late ? 'تأخر موعد البخاخ شوي، لا تنساه' : 'حان وقت البخاخ الوقائي') : lastR && St.now() - lastR.at < 6 * 3600e3 ? `آخر فنتولين ${St.ago(lastR.at)}` : 'كل شي مرتب لليوم';
   const today = s.events.filter(e => new Date(e.at).toDateString() === new Date().toDateString());
   mount(`<div class="screen">${topbar('', { gear: true })}
-    <div class="hello"><div class="who"><span>${greet}، ${esc(s.me)}</span><b>${esc(s.child.name)}</b><span>${line}</span></div><div class="av">${salman('idle')}</div></div>
+    <div class="hello"><div class="who"><span>${greet}، ${esc(s.me)}</span><b>${esc(s.child.name)}</b><span>${line}</span></div><div class="av">${salman('idle', 'face')}</div></div>
     ${p ? doseCard(slot, p) : `<button class="dose" style="width:100%;text-align:start" data-go="edit?what=meds"><div class="k">البخاخ الوقائي</div><div class="what" style="margin-top:6px">ما أضفت البخاخ الوقائي بعد</div><div class="link small" style="margin-top:6px">أضفه الحين</div></button>`}
     <div class="quick">
       <button class="qbtn" id="qr"><div class="ic">${ic('puff')}</div><b>سجّل فنتولين</b><span>${lastR ? 'آخر مرة ' + St.ago(lastR.at) : 'ما في تسجيل'}</span></button>
@@ -286,7 +283,7 @@ function confirmDose(slot, status) {
   const p = St.pre(); const puffs = status === 'given' ? (parseInt(p.dose) || (/بختين/.test(p.dose) ? 2 : 1)) : 0;
   if (status === 'given') p.used += puffs;
   const e = St.addEvent({ type: 'dose', med: 'pre', slot: slot.at, status, puffs });
-  homeScreen(); if (status === 'given') say('dose_done');
+  homeScreen(); if (status === 'given') { say('dose_done'); s3(m => m.proud()); }
   toast(status === 'given' ? `سجّلنا الجرعة ${St.fmtTime(e.at)}` : 'سجّلنا إن الجرعة ما انعطت', () => { St.removeEvent(e.id); homeScreen(); });
 }
 
@@ -432,11 +429,9 @@ async function salmanScreen() {
   await probing; clearInterval(coachTimer);
   const s = S(); const days = s.stamps.slice(-14);
   mount(`<div class="screen">${topbar('سلمان')}
-    <div class="coach" id="coach">${salman('breathe', 'breath-img')}<div class="ring"><div id="cue">نتنفس سوا؟</div></div></div>
+    <div class="coach" id="coach">${salman('breathe', 'bust')}<div class="ring"><div id="cue">نتنفس سوا؟</div></div></div>
     <div class="btns" style="margin-top:12px"><button class="btn ok" id="go">${ic('play')}ابدأ 10 أنفاس</button><button class="btn ghost" id="voice" style="flex:.5">${ic('speaker')}${s.prefs.voice ? 'الصوت شغال' : 'الصوت مطفي'}</button></div>
     <p class="muted small" style="margin:8px 4px 0">استخدمه وقت القمع: الطفل يقلّد سلمان. سلمان يعدّ بس، وما يقيس التنفس.</p>
-    <div class="label">سلمان 360° — حرّكه بإصبعك</div>
-    <div class="spin" id="spin" aria-label="سلمان ثلاثي الأبعاد، اسحب لتدويره"><div class="spin-img"></div><div class="spin-hint">${ic('back')}<span>اسحب</span>${ic('back')}</div></div>
     <div class="label">طريقة البخاخ مع القمع</div>
     <div class="viewer"><canvas id="inh3d" aria-label="البخاخ والقمع ثلاثي الأبعاد"></canvas></div>
     <div class="list" style="margin-top:12px">${[['جهّز', 'شيل غطاء البخاخ وتأكد إن القمع نظيف وناشف.'], ['رجّ البخاخ', 'رجّه زين كم ثانية قبل كل بخة.'], ['ركّبه', 'دخّل البخاخ في طرف القمع، والقناع في الطرف الثاني.'], ['بخة وحدة وتنفس', 'حط القناع على الوجه بإحكام، اضغط بخة وحدة، وخلّ الطفل يتنفس مع سلمان حسب تعليمات الطبيب.']].map((x, i) => `<button class="lstep" data-s="${i}"><span class="n">${i + 1}</span><span class="grow"><b>${x[0]}</b><div class="muted small">${x[1]}</div></span></button>`).join('')}</div>
@@ -445,38 +440,25 @@ async function salmanScreen() {
     <p class="muted small" style="margin:10px 4px">الأختام على التسجيل، مو على «قلة الأعراض»، عشان ما ينخفى شي.</p>
   </div>${tabbar('salman')}`, async () => {
     let on = false, n = 0;
-    const cue = $('#cue'), img = $('#coach .breath-img');
-    const stop = (msg) => { on = false; clearInterval(coachTimer); img.classList.remove('in'); $('#go').innerHTML = ic('play') + 'ابدأ 10 أنفاس'; cue.textContent = msg; };
+    const cue = $('#cue');
+    const stop = (msg) => { on = false; clearInterval(coachTimer); s3(m => m.breath(null)); $('#go').innerHTML = ic('play') + 'ابدأ 10 أنفاس'; cue.textContent = msg; };
     $('#go').onclick = () => {
       if (on) { say('stop'); return stop('وقفنا. نكمل بعدين؟'); }
       on = true; n = 0; $('#go').innerHTML = ic('pause') + 'وقف'; say('breathe_start'); setTimeout(() => on && say('follow'), 2000);
       let phase = 'out'; cue.textContent = 'استعد…';
       const tick = () => {
         phase = phase === 'in' ? 'out' : 'in';
-        if (phase === 'in') { n++; if (n > 10) { stop(S().child.gender === 'f' ? 'شاطرة! خلصنا' : 'شاطر! خلصنا'); say('breathe_done'); return; } }
-        cue.textContent = phase === 'in' ? `شهيق… ${n}` : `زفير… ${n}`; img.classList.toggle('in', phase === 'in');
+        if (phase === 'in') { n++; if (n > 10) { stop(S().child.gender === 'f' ? 'شاطرة! خلصنا' : 'شاطر! خلصنا'); say('breathe_done'); s3(m => m.proud()); return; } }
+        cue.textContent = phase === 'in' ? `شهيق… ${n}` : `زفير… ${n}`; s3(m => m.breath(phase));
         if (n === 1) say(phase); else if (phase === 'in') say('n' + n);
-        if (img.tagName === 'VIDEO' && phase === 'in') { img.currentTime = 0; img.play().catch(() => {}); }
       };
       setTimeout(() => { if (!on) return; tick(); coachTimer = setInterval(tick, 4000); }, 3600);
     };
     $('#voice').onclick = () => { s.prefs.voice = !s.prefs.voice; St.save(); salmanScreen(); };
-    spin360($('#spin'));
     const m = await import('./inhaler3d.js'); const I = m.createInhaler($('#inh3d'));
-    window.addEventListener('hashchange', () => { I.dispose(); clearInterval(coachTimer); }, { once: true });
+    window.addEventListener('hashchange', () => { I.dispose(); clearInterval(coachTimer); s3(m => m.breath(null)); }, { once: true });
     $$('.lstep[data-s]').forEach(b => b.onclick = () => { $$('.lstep').forEach(x => x.classList.toggle('on', x === b)); I.step(+b.dataset.s); });
   });
-}
-
-function spin360(el) {
-  const N = 48, COLS = 8, img = el.querySelector('.spin-img'); let f = 0, auto = true, x0 = null, f0 = 0, raf;
-  const draw = () => { const k = ((Math.round(f) % N) + N) % N; img.style.backgroundPosition = `${(k % COLS) / (COLS - 1) * 100}% ${Math.floor(k / COLS) / 5 * 100}%`; };
-  const loop = () => { if (!document.body.contains(el)) return cancelAnimationFrame(raf); if (auto) { f += .22; draw(); } raf = requestAnimationFrame(loop); };
-  el.addEventListener('pointerdown', e => { auto = false; x0 = e.clientX; f0 = f; el.setPointerCapture(e.pointerId); el.querySelector('.spin-hint').style.opacity = 0; });
-  el.addEventListener('pointermove', e => { if (x0 === null) return; f = f0 + (x0 - e.clientX) / 7; draw(); });
-  const up = () => { x0 = null; clearTimeout(el._t); el._t = setTimeout(() => auto = true, 2500); };
-  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
-  draw(); loop();
 }
 
 /* ================= SETTINGS / FAMILY / REPORT ================= */
