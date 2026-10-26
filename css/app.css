@@ -129,6 +129,7 @@ footer#foot{border-top:1px solid var(--line);padding:30px clamp(16px,4vw,48px);t
   .phone .scr{padding:6px 0 100px;overflow:visible}
   .tabs{position:fixed;z-index:30;padding-bottom:max(14px,env(safe-area-inset-bottom))}
   .appwrap{padding:12px 0}
+  .bubble{top:auto;bottom:14px;right:14px;font-size:14px}
   .learn .viewer{height:380px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
