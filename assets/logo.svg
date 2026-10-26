@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3a8fd6"/>
+      <stop offset="1" stop-color="#123a63"/>
+    </linearGradient>
+    <linearGradient id="d" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f3d58a"/>
+      <stop offset="1" stop-color="#c9a24a"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" rx="30" fill="url(#g)"/>
+  <!-- the letter noon drawn as one breath: bowl = two lobes meeting at the trachea -->
+  <path d="M28 54 C28 86 92 86 92 54" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
+  <path d="M60 78 L60 60 M60 66 C54 62 50 60 46 56 M60 66 C66 62 70 60 74 56" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="4.5" stroke-linecap="round"/>
+  <circle cx="60" cy="36" r="9" fill="url(#d)"/>
+</svg>
