@@ -78,25 +78,30 @@ function installLids(mat) {
   const tex = new THREE.TextureLoader().load('assets/salman_lids.webp'); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4; LID.uLidTex.value = tex;
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uBlink = LID.uBlink; sh.uniforms.uLidTex = LID.uLidTex;
-    sh.vertexShader = 'varying vec3 vRest;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vRest = position;');
-    sh.fragmentShader = 'varying vec3 vRest;\nuniform float uBlink;\nuniform sampler2D uLidTex;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+    sh.vertexShader = 'varying vec3 vRest; varying vec3 vAx; varying vec3 vAy; varying vec3 vAz;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vRest = position; vAx = normalize(normalMatrix * vec3(1.,0.,0.)); vAy = normalize(normalMatrix * vec3(0.,1.,0.)); vAz = normalize(normalMatrix * vec3(0.,0.,1.));');
+    sh.fragmentShader = 'varying vec3 vRest; varying vec3 vAx; varying vec3 vAy; varying vec3 vAz;\nuniform float uBlink;\nuniform sampler2D uLidTex;\n' + sh.fragmentShader.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+  if (lidK > 0.001) normal = normalize(mix(normal, normalize(vAx * lidN.x + vAy * lidN.y + vAz * lidN.z), lidK * 0.6));`).replace('#include <map_fragment>', `#include <map_fragment>
+  float lidK = 0.0; vec3 lidN = vec3(0.0, 0.0, 1.0);
   if (uBlink > 0.002 && vRest.z > 0.05 && vRest.y > 0.94 && vRest.y < 1.01) {
     vec4 E[2]; E[0] = vec4(-0.0452, 0.9752, 0.0250, 0.0215); E[1] = vec4(0.0466, 0.9752, 0.0255, 0.0215);
     for (int i = 0; i < 2; i++) {
-      float u = (vRest.x - E[i].x) / (E[i].z * 1.22);
+      float u = (vRest.x - E[i].x) / (E[i].z * 1.26);
       if (abs(u) < 1.0) {
         float w = sqrt(1.0 - u * u);
-        float wl = sqrt(max(0.0, 1.0 - u * u * 1.21)); float top = E[i].y + E[i].w * 0.80 * wl, bot = E[i].y - E[i].w * 1.04 * w, cl = E[i].y - E[i].w * 0.50 * wl;
+        float wl = sqrt(max(0.0, 1.0 - u * u * 1.12)); float top = E[i].y + E[i].w * 0.92 * wl, bot = E[i].y - E[i].w * 1.08 * w, cl = E[i].y - E[i].w * 0.50 * wl;
         float edge = mix(top, cl, uBlink), low = mix(bot, cl, uBlink);
         float aa = 0.00035;
-        float upper = smoothstep(edge - aa, edge + aa, vRest.y);
-        float lower = 1.0 - smoothstep(low - aa, low + aa, vRest.y);
+        // only the band the lid actually covers: from the lid edge up to the open-eye top, and the lower lid band
+        float upper = smoothstep(edge - aa, edge + aa, vRest.y) * (1.0 - smoothstep(top - 0.0002, top + 0.0012, vRest.y));
+        float lower = (1.0 - smoothstep(low - aa, low + aa, vRest.y)) * smoothstep(bot - 0.0012, bot + 0.0002, vRest.y);
         float side = 1.0 - smoothstep(0.93, 1.0, abs(u));
         float lside = 1.0 - smoothstep(0.70, 0.86, abs(u));
         float k = max(upper, lower) * side;
         vec2 luv = vec2((vRest.x + 0.10) / 0.20, (vRest.y - 0.925) / 0.10);
-        vec3 lid = texture2D(uLidTex, luv).rgb;
+        vec3 lid = texture2D(uLidTex, luv).rgb * 0.9;
         diffuseColor.rgb = mix(diffuseColor.rgb, lid, k);
+        float cover = (1.0 - smoothstep(0.85, 1.0, abs(u))) * smoothstep(bot - 0.002, bot + 0.001, vRest.y) * (1.0 - smoothstep(top - 0.001, top + 0.006, vRest.y));
+        if (cover * uBlink > lidK) { lidK = cover * smoothstep(0.15, 0.7, uBlink); lidN = normalize(vec3((vRest.x - E[i].x) / (E[i].z * 2.2), (vRest.y - E[i].y) / (E[i].w * 2.2), 1.0)); }
         float th = 0.0009 * (0.5 + 0.5 * wl) * smoothstep(0.04, 0.2, uBlink);
         float lash = (1.0 - smoothstep(th * 0.6, th, abs(vRest.y - edge))) * lside;
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.045, 0.025, 0.02), lash * 0.92);
@@ -192,7 +197,7 @@ function step(now) {
       if (t2 >= 0.21) { state.blinkT = -1; if (state.dbl) { state.dbl = false; state.nextBlink = 0.12; } }
     }
     const squint = rig.w.cheekRaise * 0.18;  // happy eyes narrow a touch
-    rig.blink = state.forceBlink != null ? state.forceBlink : Math.max(bk, squint);
+    rig.blink = Math.max(bk, squint);
     setMorphs();
     state.nod = (state.nod || 0) + ((rig.w.jawOpen > 0.3 ? 1 : 0) - (state.nod || 0)) * Math.min(1, dt * 3);
     // head: gentle look-around + nods while talking
@@ -255,4 +260,3 @@ export function capture(t, audioT, id) {
   state.cap.t = t; step(t * 1000);
   return renderer.domElement.toDataURL('image/jpeg', 0.92);
 }
-export function _blink(v) { state.forceBlink = v; }
