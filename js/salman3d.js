@@ -64,17 +64,72 @@ async function load() {
       si.set([0, 1, 2, 0], i * 4); sw.set([1 - wh - wc, wc, wh, 0], i * 4);
     }
     geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4)); geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+    if (src.material.map && !src.material.userData.lids) installLids(src.material);
     const m = new THREE.SkinnedMesh(geo, src.material); m.morphTargetDictionary = src.morphTargetDictionary; m.morphTargetInfluences = src.morphTargetInfluences ? src.morphTargetInfluences.slice() : undefined;
     root.add(m); m.bind(skel); meshes.push(m);
   }
-  rig = { root, hips, chest, head, meshes, w: { jawOpen: 0, mouthWide: 0, mouthRound: 0, mouthPress: 0, smile: 0 }, rest: { hipsY: hips.position.y, chestY: chest.position.y } };
+  rig = { root, hips, chest, head, meshes, w: { jawOpen: 0, mouthWide: 0, mouthRound: 0, mouthPress: 0, smile: 0, mouthSmile: 0, mouthFrown: 0, cheekRaise: 0, browUp: 0, browInnerUp: 0, browDown: 0 }, rest: { hipsY: hips.position.y, chestY: chest.position.y } };
+}
+/* Blink: the painted eyes are covered by the skin of a seamless closed-eye texture (projected from the front),
+   the upper lid edge sweeps down with a lash line while the lower lid rises a little — like a drawn cartoon lid. */
+const LID = { uBlink: { value: 0 }, uLidTex: { value: null } };
+function installLids(mat) {
+  mat.userData.lids = true;
+  const tex = new THREE.TextureLoader().load('assets/salman_lids.webp'); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4; LID.uLidTex.value = tex;
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uBlink = LID.uBlink; sh.uniforms.uLidTex = LID.uLidTex;
+    sh.vertexShader = 'varying vec3 vRest;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vRest = position;');
+    sh.fragmentShader = 'varying vec3 vRest;\nuniform float uBlink;\nuniform sampler2D uLidTex;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+  if (uBlink > 0.002 && vRest.z > 0.05 && vRest.y > 0.94 && vRest.y < 1.01) {
+    vec4 E[2]; E[0] = vec4(-0.0452, 0.9752, 0.0250, 0.0215); E[1] = vec4(0.0466, 0.9752, 0.0255, 0.0215);
+    for (int i = 0; i < 2; i++) {
+      float u = (vRest.x - E[i].x) / (E[i].z * 1.22);
+      if (abs(u) < 1.0) {
+        float w = sqrt(1.0 - u * u);
+        float wl = sqrt(max(0.0, 1.0 - u * u * 1.21)); float top = E[i].y + E[i].w * 0.80 * wl, bot = E[i].y - E[i].w * 1.04 * w, cl = E[i].y - E[i].w * 0.50 * wl;
+        float edge = mix(top, cl, uBlink), low = mix(bot, cl, uBlink);
+        float aa = 0.00035;
+        float upper = smoothstep(edge - aa, edge + aa, vRest.y);
+        float lower = 1.0 - smoothstep(low - aa, low + aa, vRest.y);
+        float side = 1.0 - smoothstep(0.93, 1.0, abs(u));
+        float lside = 1.0 - smoothstep(0.70, 0.86, abs(u));
+        float k = max(upper, lower) * side;
+        vec2 luv = vec2((vRest.x + 0.10) / 0.20, (vRest.y - 0.925) / 0.10);
+        vec3 lid = texture2D(uLidTex, luv).rgb;
+        diffuseColor.rgb = mix(diffuseColor.rgb, lid, k);
+        float th = 0.0009 * (0.5 + 0.5 * wl) * smoothstep(0.04, 0.2, uBlink);
+        float lash = (1.0 - smoothstep(th * 0.6, th, abs(vRest.y - edge))) * lside;
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.045, 0.025, 0.02), lash * 0.92);
+      }
+    }
+  }`);
+  };
+  mat.needsUpdate = true;
 }
 /* Rhubarb mouth cues → morph weights (A=M/B/P closed … D=wide open, E=O, F=U/W, X=rest) */
 const SHAPES = {
-  A: { mouthPress: 1 }, B: { jawOpen: .12, mouthWide: .35 }, C: { jawOpen: .42, mouthWide: .55 }, D: { jawOpen: .85, mouthWide: .1 },
-  E: { jawOpen: .4, mouthRound: .55 }, F: { jawOpen: .14, mouthRound: 1 }, G: { jawOpen: .08, mouthPress: .4, mouthWide: .2 }, H: { jawOpen: .45 }, X: {},
+  A: { mouthPress: 1 }, B: { jawOpen: .12, mouthWide: .35 }, C: { jawOpen: .42, mouthWide: .55 }, D: { jawOpen: .7, mouthWide: .1 },
+  E: { jawOpen: .35, mouthRound: .8 }, F: { jawOpen: .14, mouthRound: 1 }, G: { jawOpen: .08, mouthPress: .4, mouthWide: .2 }, H: { jawOpen: .45 }, X: {},
 };
-function setMorphs() { for (const m of rig.meshes) { const d = m.morphTargetDictionary; if (!d) continue; for (const k in rig.w) if (d[k] !== undefined) m.morphTargetInfluences[d[k]] = rig.w[k]; } }
+/* emotion per line: the whole face holds one feeling, lip-sync rides on top */
+const MOODS = {
+  happy:   { mouthSmile: .55, cheekRaise: .55, browUp: .25, smile: .25 },
+  excited: { mouthSmile: .75, cheekRaise: .75, browUp: .55, smile: .3 },
+  proud:   { mouthSmile: .65, cheekRaise: .6, browUp: .35, smile: .3 },
+  warm:    { mouthSmile: .35, cheekRaise: .3, browUp: .1, smile: .2 },
+  calm:    { mouthSmile: .2, cheekRaise: .15, smile: .2 },
+  reassure:{ mouthSmile: .15, browInnerUp: .45, smile: .1 },
+  idle:    { mouthSmile: .12, cheekRaise: .08, smile: .3 },
+};
+const LINE_MOOD = { welcome1: 'excited', welcome2: 'warm', welcome3: 'happy', breathe_start: 'calm', follow: 'calm', in: 'calm', out: 'calm', stop: 'reassure',
+  hello_morning: 'excited', hello_evening: 'happy', dose_done: 'proud', dose_time: 'warm', breathe_done: 'excited', stamp: 'excited', emergency: 'reassure' };
+const moodOf = id => { if (!id) return 'idle'; const b = id.replace(/_[mf]$/, ''); return LINE_MOOD[b] || (/^n\d+$/.test(b) ? 'calm' : 'warm'); };
+function setMorphs() {
+  LID.uBlink.value = rig.blink || 0;
+  for (const m of rig.meshes) { const d = m.morphTargetDictionary; if (!d) continue;
+    for (const k in rig.w) if (d[k] !== undefined) m.morphTargetInfluences[d[k]] = rig.w[k];
+  }
+}
 
 /* ---------- framing ---------- */
 const FRAMES = { full: { y: 0.585, d: 2.7 }, bust: { y: 0.88, d: 1.4 }, face: { y: 0.945, d: 0.7 } };
@@ -104,16 +159,40 @@ function step(now) {
     state.breath += ((state.breathTarget >= 0 ? state.breathTarget : idleB) - state.breath) * Math.min(1, dt * 2.2);
     rig.chest.position.y = rig.rest.chestY + 0.004 * state.breath;
     rig.chest.rotation.x = -0.025 * state.breath;
-    // voice → mouth shapes (cue lookahead + smoothing = coarticulation)
-    let target = SHAPES.X; let speaking = false;
+    // voice → mouth shapes (sound shape hit ~70 ms early, fast attack / softer release)
+    let target = SHAPES.X, speaking = false, emph = 0;
     const a = state.talk;
     if (a && !a.el.paused && !a.el.ended && a.cues) {
-      speaking = true; const tt = a.el.currentTime + 0.035; let cur = 'X';
-      for (let i = 0; i < a.cues.length && a.cues[i][1] <= tt; i++) cur = a.cues[i][0];
+      speaking = true; const tt = a.el.currentTime + 0.07; let cur = 'X', ci = -1;
+      for (let i = 0; i < a.cues.length && a.cues[i][1] <= tt; i++) { cur = a.cues[i][0]; ci = i; }
       target = SHAPES[cur] || SHAPES.X;
+      if ((cur === 'D' || cur === 'C') && ci >= 0) emph = 1 - Math.min(1, (tt - a.cues[ci][1]) / 0.35);  // stressed syllable
     }
-    const rate = Math.min(1, dt * 20);
-    for (const k in rig.w) { const goal = (target[k] || 0) + (k === 'smile' ? (speaking ? 0.15 : 0.3) : 0); rig.w[k] += (goal - rig.w[k]) * rate; }
+    // mood: the line's feeling, held for the whole line; idle warmth otherwise
+    const moodName = speaking ? moodOf(a.id) : (state.hop > 0 ? 'proud' : 'idle');
+    const mood = MOODS[moodName];
+    state.emph = (state.emph || 0) + (emph - (state.emph || 0)) * Math.min(1, dt * 10);
+    for (const k in rig.w) {
+      const lip = target[k] || 0, md = mood[k] || 0;
+      let goal = Math.max(lip, md * (k === 'mouthSmile' ? (1 - (target.mouthRound || 0)) : 1));
+      if (k === 'browUp') goal += 0.35 * state.emph;
+      const sp = (goal > rig.w[k] ? 26 : 14) * (k.startsWith('brow') || k === 'cheekRaise' || k === 'mouthSmile' ? 0.35 : 1);
+      rig.w[k] += (goal - rig.w[k]) * Math.min(1, dt * sp);
+    }
+    // blink: 2–6 s apart, sometimes double, also on bigger head turns; 50 ms close, 40 ms hold, 120 ms open
+    state.nextBlink -= dt;
+    const turn = Math.abs(rig.head.rotation.y - (state.lastYaw || 0)); state.lastYaw = rig.head.rotation.y;
+    if (state.blinkT === undefined) state.blinkT = -1;
+    if (state.blinkT < 0 && (state.nextBlink <= 0 || turn > 0.02)) { state.blinkT = 0; state.nextBlink = 2.5 + Math.random() * 3.5; if (Math.random() < 0.15) state.dbl = true; }
+    let bk = 0;
+    if (state.blinkT >= 0) {
+      state.blinkT += dt; const t2 = state.blinkT;
+      bk = t2 < 0.05 ? t2 / 0.05 : t2 < 0.09 ? 1 : t2 < 0.21 ? 1 - (t2 - 0.09) / 0.12 : 0;
+      bk = bk * bk * (3 - 2 * bk);
+      if (t2 >= 0.21) { state.blinkT = -1; if (state.dbl) { state.dbl = false; state.nextBlink = 0.12; } }
+    }
+    const squint = rig.w.cheekRaise * 0.18;  // happy eyes narrow a touch
+    rig.blink = state.forceBlink != null ? state.forceBlink : Math.max(bk, squint);
     setMorphs();
     state.nod = (state.nod || 0) + ((rig.w.jawOpen > 0.3 ? 1 : 0) - (state.nod || 0)) * Math.min(1, dt * 3);
     // head: gentle look-around + nods while talking
@@ -164,15 +243,16 @@ export function refresh() { if (renderer) { host = null; attachBest(); } }
 export function speak(el, id) {
   let cues = null; const e = ENV && ENV[id];
   if (e) cues = e.match(/[A-HX]\d{4}/g).map(c => [c[0], +c.slice(1) / 100]);
-  state.talk = { el, cues };
+  state.talk = { el, cues, id };
 }
 export function breath(phase) { state.breathTarget = phase === 'in' ? 1 : phase === 'out' ? 0 : -1; }
 export function proud() { state.hop = 0.9; }
 /* deterministic frame stepping for recording demo videos */
 export function capture(t, audioT, id) {
   if (!state.cap) { state.cap = { t: 0 }; last = 0; scene.background = new THREE.Color(0xeef3f8); }
-  if (id) { if (!state.talk || state.talk.id !== id) { speak({ paused: false, ended: false, currentTime: 0 }, id); state.talk.id = id; } state.talk.el.currentTime = audioT; state.talk.el.paused = audioT < 0; }
+  if (id) { if (!state.talk || state.talk.id !== id) { speak({ paused: false, ended: false, currentTime: 0 }, id); } state.talk.el.currentTime = audioT; state.talk.el.paused = audioT < 0; }
   else state.talk = null;
   state.cap.t = t; step(t * 1000);
   return renderer.domElement.toDataURL('image/jpeg', 0.92);
 }
+export function _blink(v) { state.forceBlink = v; }
